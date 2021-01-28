@@ -1,5 +1,68 @@
 'use strict';
 
+var tableEditableBefore;
+var tableEditable = $('#tableEditable');
+var minRating = 0.87; // string similarity
+
+Array.prototype.insert = function ( index, item ) {
+    this.splice( index, 0, item );
+};
+
+var gcd = function(a, b) {
+  if (b < 0.0000001) return a;                // Since there is a limited precision we need to limit the value.
+
+  return gcd(b, Math.floor(a % b));           // Discard any fractions due to limitations in precision.
+};
+
+var rationalizeNumber = function(fraction) {
+    if (fraction % 1 != 0) {
+        var fractionValues = fraction.toString().split('.');
+        var baseNumber = fractionValues[0];
+        var fraction = '0.' + fractionValues[1]
+        var len = fraction.length - 2;
+
+        var denominator = Math.pow(10, len);
+        var numerator = fraction * denominator;
+
+        var divisor = gcd(numerator, denominator);    // Should be 5
+
+        numerator /= divisor;                         // Should be 687
+        denominator /= divisor;                       // Should be 2000
+        if (baseNumber > 0){
+            return baseNumber + " " + Math.floor(numerator) + '/' + Math.floor(denominator);
+        }
+        else{
+            return Math.floor(numerator) + '/' + Math.floor(denominator);
+        }
+
+    }
+
+    return fraction.toString();
+};
+
+function toDeci(fraction) {
+    fraction = fraction.toString();
+    var result,wholeNum=0, frac, deci=0;
+    if(fraction.search('/') >=0){
+        if(fraction.search('-') >=0){
+            wholeNum = fraction.split('-');
+            frac = wholeNum[1];
+            wholeNum = parseInt(wholeNum,10);
+        }else{
+            frac = fraction;
+        }
+        if(fraction.search('/') >=0){
+            frac =  frac.split('/');
+            deci = parseInt(frac[0], 10) / parseInt(frac[1], 10);
+        }
+        result = wholeNum+deci;
+    } else{
+        result = parseFloat(fraction)
+    }
+    return result;
+}
+
+// Main table
 var LightTableFilter = (function(Arr) {
     var _input;
 
@@ -136,6 +199,198 @@ var LightTableFilter = (function(Arr) {
     };
 })(Array.prototype);
 
+// Grocery List generation
+if (tableEditable){
+    tableEditable.on('focus', function() {
+      tableEditableBefore = $(this).html();
+    }).on('blur keyup paste', function() {
+      if (tableEditableBefore != $(this).html()) { $(this).trigger('change'); }
+    });
+
+    (function( $ ){
+       $.fn.generateGroceryTable = function() {
+          var groceryElements = {
+            'Produce': {'units': [], 'values': [], 'generated': []},
+            'Meat': {'units': [], 'values': [], 'generated': []},
+            'Frozen/Dairy': {'units': [], 'values': [], 'generated': []},
+            'Dry Goods': {'units': [], 'values': [], 'generated': []}
+          };
+          // Hardcoded columns
+          var groceryColumns = [5,6,7,8];
+          var groceryData = [];
+
+          var productsTableData = this.tableToJSON({
+              onlyColumns: groceryColumns,
+              ignoreEmptyRows: true,
+              ignoreHiddenRows: true,
+              extractor : function(cellIndex, $cell) {
+                // get text from the span inside table cells;
+                // if empty or non-existant, get the cell text
+                var $cellParent = $cell.parent();
+                if (!$cellParent.hasClass('is-disabled')){
+                    return $cell.find('span').text() || null;
+                }
+              }
+          });
+
+          $.each(productsTableData, function( productIndex, productValue ) {
+              $.each(Object.keys(groceryElements), function( index, headKey ) {
+                 if (productValue && productValue.hasOwnProperty(headKey) && typeof productValue[headKey] === 'string'){
+                    var lines = productValue[headKey].replace('<br>', '\n').replace('<br/>', '\n').split("\n");
+
+                    $.each(lines, function( index, line ) {
+                        line = line.trim();
+
+                        if (!line.length || line.length < 2){
+                            return
+                        }
+
+                        var unit;
+                        var currentUnit = 0;
+                        var unitData = [];
+
+                        line = line.trim().replace(/^-/g,'').trim();
+
+                        var lineData = line.match(/(^[0-9 \.\-\/]+)(.*)/);
+                        if (lineData && lineData.length === 3){
+                            lineData[1] = lineData[1].trim().replace(/^-/g,'')
+                            lineData[1] = lineData[1].replace('1-2', '2');
+
+                            unitData = lineData[1].split(' ');
+                            line = lineData[2];
+                            var i;
+
+                            for (i = 0; i < unitData.length; i++) {
+                                unit = unitData[i];
+
+                                if (unit.includes('/')){
+                                    var convertedUnit = toDeci(unit);
+                                }
+                                else{
+                                    var convertedUnit = parseFloat(unit);
+                                }
+
+
+                                if (!isNaN(convertedUnit)){
+                                    currentUnit += convertedUnit;
+                                }
+                                else{
+                                    currentUnit += 1;
+                                }
+                            }
+                        }
+                        else{
+                            currentUnit = 1;
+                        }
+
+                        if (line && currentUnit){
+                            groceryElements[headKey]['units'].push(currentUnit);
+                            groceryElements[headKey]['values'].push(line);
+                        }
+                    });
+                 }
+              });
+          });
+
+          var headKeyIndex = 0;
+          $.each(groceryElements, function(headKey, itemData){
+            var units = itemData['units'];
+            var values = itemData['values'];
+            var generatedValues = {};
+            var denyIndexes = [];
+
+            $.each(values, function(index){
+                var currentValue = values[index];
+                var currentUnit = units[index];
+
+                if (!currentUnit){
+                    console.log('bad unit ' + currentUnit)
+                    return
+                }
+
+                if (!(currentValue in generatedValues)){
+                     generatedValues[currentValue] = currentUnit;
+                     denyIndexes.push(index);
+                     return
+                }
+
+                $.each(values, function(idx, item) {
+                    if (denyIndexes.includes(idx)){
+                        return
+                    }
+
+                    var rating = stringSimilarity.compareTwoStrings(currentValue, item);
+                    if (rating >= minRating) {
+                        denyIndexes.push(idx);
+                        generatedValues[currentValue] += currentUnit;
+                    }
+                } );
+
+            });
+
+            $.each(generatedValues, function(index){
+                generatedValues[index] = rationalizeNumber(generatedValues[index]);
+            });
+
+
+            Object.keys(generatedValues).map(function (key, index) {
+                if(typeof groceryData[index] === 'undefined'){
+                    groceryData[index] = ['', '', '', '']
+                }
+
+                groceryData[index][headKeyIndex] =  generatedValues[key] + ' ' + key;
+            });
+
+            headKeyIndex += 1;
+          });
+
+          return {
+            head: [Object.keys(groceryElements)],
+            body: groceryData,
+            tableWidth: 'auto',
+            theme: "plain",
+            rowPageBreak: 'avoid',
+            columnStyles: {
+                0: {
+                    cellWidth: 100,
+                },
+                1: {
+                    cellWidth: 100,
+                },
+                2: {
+                    cellWidth: 100,
+                },
+                3: {
+                    cellWidth: 100,
+                }
+            },
+            styles: {
+                cellPadding: 2,
+                fontSize: 9,
+                lineColor: [0, 0, 0],
+                lineWidth: 0.2,
+                font: "times",
+                minCellHeight: 10,
+                overflow: 'linebreak',
+            },
+            headStyles: {
+                cellPadding: 2,
+                fillColor: [255, 255, 255],
+                minCellHeight: 10,
+            },
+            margin: {top: 18, bottom: 18, left: 40, right: 25},
+            didParseCell: function (table) {
+                if (table.section === 'head') {
+                    table.cell.styles.textColor = '#000000';
+                }
+            },
+        }
+       };
+    })( jQuery );
+}
+
+// CODE HERE
+// -----------------------------------------
 $(function() {
     // A few jQuery helpers for exporting only
     jQuery.fn.pop = [].pop;
@@ -471,6 +726,12 @@ $(function() {
                 }
             },
         });
+
+        if (tableEditable && $("#tableEditable tbody tr:not(.is-disabled):not(:hidden)").length){
+            var groceryData = tableEditable.generateGroceryTable();
+            groceryData['startY'] = doc.lastAutoTable.finalY + 50;
+            doc.autoTable(groceryData);
+        }
 
         doc.save(pdfName);
     });
