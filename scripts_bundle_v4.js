@@ -731,7 +731,7 @@ $(function() {
         if ($table.find('tr:not(.is-disabled):not(:hidden)').length){
             var groceryData = generateGroceryTable($table);
             groceryData['startY'] = doc.lastAutoTable.finalY + 50;
-            //doc.autoTable(groceryData);
+            doc.autoTable(groceryData);
         }
 
         doc.save(pdfName);
