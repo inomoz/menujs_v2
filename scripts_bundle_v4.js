@@ -220,7 +220,16 @@ function generateGroceryTable($table) {
             // if empty or non-existant, get the cell text
             var $cellParent = $cell.parent();
             if (!$cellParent.hasClass('is-disabled')) {
-                return $cell.find('p').text() || null;
+                var $cellElements = $cell.find('p');
+                if ($cellElements.length){
+                    return $cellElements.map(function(){
+                            return $(this).text();
+                        }).get().join('\n').trim()
+                }
+                else{
+                    return null;
+                }
+
             }
         }
     });
@@ -722,7 +731,7 @@ $(function() {
         if ($table.find('tr:not(.is-disabled):not(:hidden)').length){
             var groceryData = generateGroceryTable($table);
             groceryData['startY'] = doc.lastAutoTable.finalY + 50;
-            doc.autoTable(groceryData);
+            //doc.autoTable(groceryData);
         }
 
         doc.save(pdfName);
