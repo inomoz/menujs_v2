@@ -608,10 +608,9 @@ $(function() {
 
             for (var i = 0; i < $tds.length; i++) {
                 if (skipIndexes.indexOf(i) === -1){
-                    row.push(
-                        $($tds[i]).ignore('.tablesaw-cell-label').find('p').map(function(){
+                    row.push($($tds[i]).ignore('.tablesaw-cell-label').find('p').map(function(){
                             return $(this).text();
-                        }).get().join('\n').trim();
+                        }).get().join('\n').trim());
                 }
             }
 
